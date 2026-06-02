@@ -1,15 +1,12 @@
 import json
 import os
 import re
-import smtplib
 from datetime import datetime, timezone
-from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler
 from typing import Any
 
 
 MAX_BODY_BYTES = 10_000
-IMMEDIATE_EMAIL_VALUES = {"1", "true", "yes", "on"}
 
 
 class ValidationError(Exception):
@@ -41,58 +38,6 @@ def _get_supabase():
         raise RuntimeError("Supabase Python package is not installed") from exc
 
     return create_client(url, key)
-
-
-def _get_smtp_port() -> int:
-    try:
-        return int(os.environ.get("SMTP_PORT", "587") or "587")
-    except ValueError:
-        return 587
-
-
-def _get_smtp_config():
-    """Returns SMTP config from environment variables."""
-    return {
-        "server": os.environ.get("SMTP_SERVER", ""),
-        "port": _get_smtp_port(),
-        "user": os.environ.get("SMTP_USERNAME", ""),
-        "password": os.environ.get("SMTP_PASSWORD", ""),
-        "receiver": os.environ.get("RECEIVER_EMAIL", "He_jani2523@yahoo.in") or "He_jani2523@yahoo.in",
-    }
-
-
-def _is_smtp_configured() -> bool:
-    cfg = _get_smtp_config()
-    return bool(cfg["server"] and cfg["user"] and cfg["password"])
-
-
-def _should_send_immediate_email() -> bool:
-    value = os.environ.get("SEND_IMMEDIATE_ENQUIRY_EMAIL", "").strip().lower()
-    return value in IMMEDIATE_EMAIL_VALUES
-
-
-def _send_email(subject: str, body: str) -> bool:
-    """Send one email using SMTP."""
-    cfg = _get_smtp_config()
-    if not cfg["server"] or not cfg["user"] or not cfg["password"]:
-        print("Email configuration missing, skipping email.")
-        return False
-
-    try:
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = cfg["user"]
-        msg["To"] = cfg["receiver"]
-        msg.set_content(body)
-        with smtplib.SMTP(cfg["server"], cfg["port"]) as server:
-            server.starttls()
-            server.login(cfg["user"], cfg["password"])
-            server.send_message(msg)
-        print(f"Email sent: {subject}")
-        return True
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-        return False
 
 
 def _clean_text(value: Any, max_len: int = 160) -> str:
@@ -136,27 +81,6 @@ def _validate_payload(data: dict[str, Any]) -> dict[str, str]:
         "purchase_timeline": _clean_text(data.get("purchaseTimeline") or data.get("purchase_timeline"), 80),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-
-
-def _send_notification(enquiry_data: dict) -> bool:
-    """Send immediate email notification for a new enquiry."""
-    subject = f"New Enquiry: {enquiry_data.get('product') or 'Kitchen Appliance'}"
-    body = f"""
-New Enquiry Received from JJ Appliances Website:
-
-  Product  : {enquiry_data.get('product', 'N/A')}
-  Offer ID : {enquiry_data.get('offer_id', 'N/A')}
-  Budget   : {enquiry_data.get('budget', 'N/A')}
-  Name     : {enquiry_data.get('name', 'N/A')}
-  Phone    : {enquiry_data.get('phone', 'N/A')}
-  Area     : {enquiry_data.get('area', 'N/A')}
-  Timeline : {enquiry_data.get('purchase_timeline', 'N/A')}
-  Call Time: {enquiry_data.get('preferred_contact_time', 'N/A')}
-  Message  : {enquiry_data.get('message', 'N/A')}
-  Source   : {enquiry_data.get('source_path', 'N/A')}
-  Date     : {enquiry_data.get('created_at', 'N/A')}
-"""
-    return _send_email(subject, body)
 
 
 def _is_missing_optional_column_error(exc: Exception) -> bool:
@@ -277,9 +201,6 @@ class handler(BaseHTTPRequestHandler):
                 print(f"Error saving enquiry: {e}")
 
             if saved:
-                if _should_send_immediate_email() and not _send_notification(saved):
-                    print("Immediate email notification failed or is not configured (enquiry still saved).")
-
                 self._send_json(201, {
                     "id": str(saved.get("id", "")),
                     "product": saved.get("product", ""),
@@ -292,24 +213,7 @@ class handler(BaseHTTPRequestHandler):
                     "preferredContactTime": saved.get("preferred_contact_time", ""),
                     "purchaseTimeline": saved.get("purchase_timeline", ""),
                     "date": saved.get("created_at", ""),
-                    "messageText": "Request saved. The showroom receives new leads every 4 hours and will contact you within 24 hours.",
-                })
-                return
-
-            if _send_notification(enquiry_payload):
-                self._send_json(202, {
-                    "product": enquiry_payload.get("product", ""),
-                    "budget": enquiry_payload.get("budget", ""),
-                    "name": enquiry_payload.get("name", ""),
-                    "phone": enquiry_payload.get("phone", ""),
-                    "area": enquiry_payload.get("area", ""),
-                    "message": enquiry_payload.get("message", ""),
-                    "offerId": enquiry_payload.get("offer_id", ""),
-                    "preferredContactTime": enquiry_payload.get("preferred_contact_time", ""),
-                    "purchaseTimeline": enquiry_payload.get("purchase_timeline", ""),
-                    "date": enquiry_payload.get("created_at", ""),
-                    "storage": "email_only",
-                    "messageText": "Request emailed to the store. The database is temporarily unavailable.",
+                    "messageText": "Request saved. The showroom team will review new leads and contact you within 24 hours.",
                 })
                 return
 
@@ -319,8 +223,8 @@ class handler(BaseHTTPRequestHandler):
                 })
                 return
 
-            print(f"Could not save or notify enquiry: {supabase_error}")
-            self._send_json(500, {"error": "Internal server error"})
+            print(f"Could not save enquiry: {supabase_error}")
+            self._send_json(500, {"error": "Could not save the enquiry. Please call or WhatsApp the store."})
 
         except ValidationError as e:
             self._send_json(422, {"error": str(e)})
@@ -337,6 +241,4 @@ class handler(BaseHTTPRequestHandler):
             "ok": True,
             "service": "enquiries",
             "supabaseConfigured": _has_supabase_config(),
-            "smtpConfigured": _is_smtp_configured(),
-            "immediateEmailEnabled": _should_send_immediate_email(),
         })

@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS enquiries (
   source_path TEXT,
   preferred_contact_time TEXT,
   purchase_timeline TEXT,
-  digest_sent BOOLEAN DEFAULT FALSE,
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -25,11 +24,6 @@ ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS offer_id TEXT;
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS source_path TEXT;
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS preferred_contact_time TEXT;
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS purchase_timeline TEXT;
-ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS digest_sent BOOLEAN DEFAULT FALSE;
-
-CREATE INDEX IF NOT EXISTS enquiries_digest_pending_idx
-  ON enquiries (digest_sent, created_at)
-  WHERE digest_sent = FALSE;
 
 -- 2. Enable Row Level Security
 ALTER TABLE enquiries ENABLE ROW LEVEL SECURITY;

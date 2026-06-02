@@ -152,7 +152,7 @@ const EnquiryForm: React.FC = () => {
             <div className="enquiry-benefits">
               {[
                 { label: 'Lead Saved', desc: 'Your enquiry is stored safely in the showroom lead list', icon: '01' },
-                { label: '4-Hour Team Digest', desc: 'New leads are emailed to the store team every 4 hours', icon: '02' },
+                { label: 'Team Review', desc: 'The showroom team reviews new enquiries from the lead list', icon: '02' },
                 { label: 'Expert Guidance', desc: 'Specialists suggest the right suction, burner, and fit', icon: '03' },
                 { label: 'Installation Support', desc: 'Help with delivery, fitting, and after-sales service', icon: '04' },
               ].map((item) => (
@@ -170,7 +170,7 @@ const EnquiryForm: React.FC = () => {
               <strong>What happens next</strong>
               <ol>
                 <li>We save your requirement and model interest.</li>
-                <li>The showroom gets a fresh lead digest every 4 hours.</li>
+                <li>The showroom team checks the lead list and confirms availability.</li>
                 <li>A specialist calls or WhatsApps with stock, price, and demo options.</li>
               </ol>
             </div>
