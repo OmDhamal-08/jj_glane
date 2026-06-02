@@ -30,7 +30,11 @@ python -m py_compile api/enquiries.py
 
 ## Editable Offers
 
-Live offers are loaded from `public/offers.csv`. Non-technical editors can open that file in Excel or Google Sheets, edit rows, and save it back as CSV.
+Live offers are loaded from the Supabase `offers` table through `/api/offers`.
+
+Admins can manage offers from the hidden `/admin` page. This page is not linked from the public website and requires `ADMIN_PASSWORD`.
+
+`public/offers.csv` is still kept as a fallback if the offers API is unavailable.
 
 See `docs/offers-guide.md` for the field-by-field instructions.
 
@@ -48,6 +52,7 @@ Required environment variables:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` with the Supabase service-role key
+- `ADMIN_PASSWORD` with a long private password for `/admin`
 
 `SUPABASE_KEY` is still accepted as a legacy fallback, but the service-role key is required because the backend writes to a table protected by RLS.
 
@@ -57,4 +62,6 @@ Enquiries are stored in Supabase. The showroom team can review them from the Sup
 
 You can open `/api/enquiries` in the browser to verify the backend is deployed. It returns a JSON health response showing whether Supabase is configured.
 
-Run `database/supabase-schema.sql` in Supabase when deploying the enquiry table or adding the newer optional columns.
+You can open `/admin` directly to edit offers. Do not add a public link to this page.
+
+Run `database/supabase-schema.sql` in Supabase after deleting old app tables/data and creating a fresh setup.

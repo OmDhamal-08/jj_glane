@@ -1,5 +1,6 @@
 import type { SpecialOffer } from '../types';
 
+const OFFERS_API_URL = '/api/offers';
 const OFFERS_CSV_URL = '/offers.csv';
 
 const DEFAULT_SPECIAL_OFFERS: SpecialOffer[] = [
@@ -17,7 +18,7 @@ const DEFAULT_SPECIAL_OFFERS: SpecialOffer[] = [
     eventName: 'Store Offer',
     badge: 'LIVE',
     endDate: '2026-12-31T23:59:59+05:30',
-    image: 'https://glenindia.com/cdn/shop/products/6060-60-bl_1_800x.jpg',
+    image: '/showroom-kitchen-studio.jpg',
     highlight: true,
     terms: 'Ask the store team for today pricing and stock confirmation.',
     ctaText: 'Ask Price',
@@ -122,6 +123,33 @@ const rowsToOffers = (rows: string[][]) => {
     });
 };
 
+type OffersApiResponse = {
+  offers?: SpecialOffer[];
+  offer?: SpecialOffer;
+  error?: string;
+};
+
+const readJsonResponse = async (response: Response): Promise<OffersApiResponse> => {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+};
+
+const normalizeLoadedOffers = (offers: SpecialOffer[]) => offers
+  .filter((offer) => offer.active)
+  .sort((a, b) => {
+    if (a.highlight !== b.highlight) return a.highlight ? -1 : 1;
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return a.title.localeCompare(b.title);
+  });
+
+const getAdminHeaders = (adminPassword: string) => ({
+  'Content-Type': 'application/json',
+  Authorization: `Bearer ${adminPassword}`,
+});
+
 export const getOfferTimeLeft = (endDate: string) => {
   const diff = new Date(endDate).getTime() - Date.now();
   if (!Number.isFinite(diff) || diff <= 0) {
@@ -152,6 +180,17 @@ export const getOfferEndLabel = (endDate: string) => {
 
 export const loadSpecialOffers = async (): Promise<SpecialOffer[]> => {
   try {
+    const response = await fetch(OFFERS_API_URL, { cache: 'no-store' });
+    if (response.ok) {
+      const body = await readJsonResponse(response);
+      const offers = normalizeLoadedOffers(body.offers || []);
+      if (offers.length > 0) return offers;
+    }
+  } catch (error) {
+    console.error('Failed to load offers from API. Trying editable CSV fallback.', error);
+  }
+
+  try {
     const response = await fetch(OFFERS_CSV_URL, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Unable to load offers CSV: ${response.status}`);
 
@@ -161,4 +200,34 @@ export const loadSpecialOffers = async (): Promise<SpecialOffer[]> => {
     console.error('Failed to load editable offers. Using fallback offers.', error);
     return DEFAULT_SPECIAL_OFFERS;
   }
+};
+
+export const loadAdminOffers = async (adminPassword: string): Promise<SpecialOffer[]> => {
+  const response = await fetch(`${OFFERS_API_URL}?admin=1`, {
+    cache: 'no-store',
+    headers: getAdminHeaders(adminPassword),
+  });
+  const body = await readJsonResponse(response);
+  if (!response.ok) throw new Error(body.error || 'Could not load offers.');
+  return body.offers || [];
+};
+
+export const saveAdminOffer = async (adminPassword: string, offer: SpecialOffer): Promise<SpecialOffer> => {
+  const response = await fetch(OFFERS_API_URL, {
+    method: 'POST',
+    headers: getAdminHeaders(adminPassword),
+    body: JSON.stringify(offer),
+  });
+  const body = await readJsonResponse(response);
+  if (!response.ok || !body.offer) throw new Error(body.error || 'Could not save offer.');
+  return body.offer;
+};
+
+export const deleteAdminOffer = async (adminPassword: string, offerId: string): Promise<void> => {
+  const response = await fetch(`${OFFERS_API_URL}?id=${encodeURIComponent(offerId)}`, {
+    method: 'DELETE',
+    headers: getAdminHeaders(adminPassword),
+  });
+  const body = await readJsonResponse(response);
+  if (!response.ok) throw new Error(body.error || 'Could not delete offer.');
 };

@@ -13,11 +13,12 @@ import EnquiryForm from './components/EnquiryForm';
 import ContactMap from './components/ContactMap';
 import FAQ from './components/FAQ';
 import Footer from './components/Footer';
+import AdminOffers from './components/AdminOffers';
 import { initGsapAnimations } from './gsapAnimations';
 
 import { BUSINESS_DETAILS, SOCIAL_LINKS } from './constants';
 
-const App: React.FC = () => {
+const PublicSite: React.FC = () => {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const [showLoader, setShowLoader] = useState(true);
   const [loaderFading, setLoaderFading] = useState(false);
@@ -269,6 +270,11 @@ const App: React.FC = () => {
       </div>
     </div>
   );
+};
+
+const App: React.FC = () => {
+  const path = window.location.pathname.replace(/\/+$/, '');
+  return path === '/admin' ? <AdminOffers /> : <PublicSite />;
 };
 
 export default App;

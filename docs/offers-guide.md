@@ -1,24 +1,29 @@
 # Editing Website Offers
 
-The live offers section is powered by `public/offers.csv`.
+The live offers section is powered by the hidden `/admin` page and the Supabase `offers` table.
 
 ## How to edit
 
-1. Open `public/offers.csv` in Excel, Google Sheets, or LibreOffice.
-2. Edit only the rows under the header row.
-3. Keep the header names exactly as they are.
-4. Save/export the file as CSV.
-5. Run the site and check the offers section.
+1. Open `/admin` on the deployed site.
+2. Enter the admin password.
+3. Select an existing offer or click `New`.
+4. Edit the fields.
+5. Click `Save Offer`.
+6. Use `Active` to show or hide an offer without deleting it.
 
 ## Important fields
 
-- `active`: use `yes` to show an offer, `no` to hide it.
+- `active`: checked offers show on the public website.
 - `priority`: smaller numbers show first.
 - `id`: short unique name, such as `summer-chimney-sale`.
 - `endDate`: use this format: `2026-07-15T23:59:59+05:30`.
-- `image`: paste a full image URL.
-- `highlight`: use `yes` for the most important offer, `no` for normal offers.
+- `image`: choose one of the preset backgrounds or paste a full image URL.
+- `highlight`: use for the most important offer.
 - `terms`: short customer-friendly condition text.
+
+## CSV fallback
+
+`public/offers.csv` is still kept as a fallback if the offers API is unavailable, but normal editing should happen through `/admin`.
 
 ## Social links
 
