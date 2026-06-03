@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import https from 'node:https';
 
 export const config = {
   regions: ['bom1'],
@@ -7,6 +8,7 @@ export const config = {
 const MAX_BODY_BYTES = 20_000;
 const SUPABASE_TIMEOUT_MS = 10_000;
 const API_VERSION = 'node-offers-v2';
+const SUPABASE_DNS_FALLBACK_IPS = ['104.18.38.10', '172.64.149.246'];
 const FALLBACK_OFFERS = [
   {
     active: true,
@@ -251,6 +253,58 @@ const getBody = async (request) => {
   return rawBody ? JSON.parse(rawBody) : {};
 };
 
+const readJsonPayload = (text) => (text ? JSON.parse(text) : []);
+
+const isDnsFailure = (error) => {
+  const code = error?.cause?.code || error?.code;
+  return code === 'ENOTFOUND' || code === 'EAI_AGAIN';
+};
+
+const supabaseIpRequest = ({ url, key }, method, table, query, body, prefer, ipAddress) => new Promise((resolve, reject) => {
+  const parsedUrl = new URL(url);
+  const params = new URLSearchParams(query);
+  const payload = body === undefined ? '' : JSON.stringify(body);
+  const request = https.request({
+    hostname: ipAddress,
+    port: 443,
+    path: `/rest/v1/${encodeURIComponent(table)}?${params}`,
+    method,
+    servername: parsedUrl.hostname,
+    timeout: SUPABASE_TIMEOUT_MS,
+    headers: {
+      Host: parsedUrl.hostname,
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      ...(prefer ? { Prefer: prefer } : {}),
+      ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
+    },
+  }, (response) => {
+    const chunks = [];
+    response.on('data', (chunk) => chunks.push(chunk));
+    response.on('end', () => {
+      const text = Buffer.concat(chunks).toString('utf8');
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        reject(new Error(`Supabase ${method} ${table} failed (${response.statusCode}): ${text.slice(0, 500)}`));
+        return;
+      }
+
+      try {
+        resolve(readJsonPayload(text));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+
+  request.on('timeout', () => {
+    request.destroy(new Error(`Supabase ${method} ${table} timed out through ${ipAddress}`));
+  });
+  request.on('error', reject);
+  if (payload) request.write(payload);
+  request.end();
+});
+
 const supabaseRequest = async (method, table, query = {}, body = undefined, prefer = '') => {
   const { url, key } = getSupabaseConfig();
   const params = new URLSearchParams(query);
@@ -275,7 +329,21 @@ const supabaseRequest = async (method, table, query = {}, body = undefined, pref
       throw new Error(`Supabase ${method} ${table} failed (${result.status}): ${text.slice(0, 500)}`);
     }
 
-    return text ? JSON.parse(text) : [];
+    return readJsonPayload(text);
+  } catch (error) {
+    if (!isDnsFailure(error)) throw error;
+
+    console.warn(`${API_VERSION} DNS failed for ${new URL(url).hostname}; trying Supabase IP fallback.`);
+    let lastError = error;
+    for (const ipAddress of SUPABASE_DNS_FALLBACK_IPS) {
+      try {
+        return await supabaseIpRequest({ url, key }, method, table, query, body, prefer, ipAddress);
+      } catch (fallbackError) {
+        lastError = fallbackError;
+      }
+    }
+
+    throw lastError;
   } finally {
     clearTimeout(timeout);
   }
