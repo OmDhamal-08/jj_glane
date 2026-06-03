@@ -272,7 +272,8 @@ const supabaseIpRequest = ({ url, key }, method, table, query, body, prefer, ipA
     servername: parsedUrl.hostname,
     timeout: SUPABASE_TIMEOUT_MS,
     headers: {
-      Host: parsedUrl.hostname,
+      host: parsedUrl.hostname,
+      'x-forwarded-host': parsedUrl.hostname,
       apikey: key,
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
