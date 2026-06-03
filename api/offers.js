@@ -451,6 +451,14 @@ export default async function handler(request, response) {
 
     console.error(`${API_VERSION} ${request.method} error:`, error);
     const action = request.method === 'POST' ? 'save' : request.method === 'DELETE' ? 'delete' : 'load';
-    sendJson(response, 500, { error: `Could not ${action} offers.`, runtime: API_VERSION });
+    const requestUrl = new URL(request.url, 'https://local.vercel');
+    const debugPayload = requestUrl.searchParams.get('debug') === '1' && isAdminRequest(request)
+      ? {
+        details: cleanText(error.message, 500),
+        cause: cleanText(error?.cause?.message || error?.cause?.code || '', 240),
+      }
+      : {};
+
+    sendJson(response, 500, { error: `Could not ${action} offers.`, runtime: API_VERSION, ...debugPayload });
   }
 }
