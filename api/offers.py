@@ -5,10 +5,13 @@ import re
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.request import Request, urlopen
 
 
 MAX_BODY_BYTES = 20_000
+SUPABASE_TIMEOUT_SECONDS = 10
 
 
 class ValidationError(Exception):
@@ -23,18 +26,50 @@ def _get_env(*names: str) -> str:
     return ""
 
 
-def _get_supabase():
+def _get_supabase_config() -> tuple[str, str]:
     url = _get_env("SUPABASE_URL")
     key = _get_env("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY")
     if not url or not key:
         raise RuntimeError("Supabase configuration is missing")
 
-    try:
-        from supabase import create_client
-    except ImportError as exc:
-        raise RuntimeError("Supabase Python package is not installed") from exc
+    return url.rstrip("/"), key
 
-    return create_client(url, key)
+
+def _supabase_request(
+    method: str,
+    table: str,
+    query: dict[str, str] | None = None,
+    body: dict[str, Any] | None = None,
+    prefer: str = "",
+) -> Any:
+    url, key = _get_supabase_config()
+    query_string = f"?{urlencode(query)}" if query else ""
+    request_body = json.dumps(body).encode() if body is not None else None
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+
+    request = Request(
+        f"{url}/rest/v1/{quote(table)}{query_string}",
+        data=request_body,
+        headers=headers,
+        method=method,
+    )
+
+    try:
+        with urlopen(request, timeout=SUPABASE_TIMEOUT_SECONDS) as response:
+            raw = response.read().decode()
+    except HTTPError as exc:
+        error_body = exc.read().decode(errors="replace")
+        raise RuntimeError(f"Supabase {method} {table} failed ({exc.code}): {error_body[:500]}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Supabase {method} {table} failed: {exc}") from exc
+
+    return json.loads(raw) if raw else []
 
 
 def _clean_text(value: Any, max_len: int = 220) -> str:
@@ -190,8 +225,8 @@ class handler(BaseHTTPRequestHandler):
             if admin_mode:
                 _require_admin(self.headers)
 
-            result = _get_supabase().table("offers").select("*").execute()
-            offers = [_row_to_offer(row) for row in (result.data or [])]
+            rows = _supabase_request("GET", "offers", {"select": "*"})
+            offers = [_row_to_offer(row) for row in rows]
             if not admin_mode:
                 offers = [offer for offer in offers if offer["active"]]
 
@@ -206,8 +241,14 @@ class handler(BaseHTTPRequestHandler):
         try:
             _require_admin(self.headers)
             offer_row = _offer_to_row(self._read_json_body())
-            result = _get_supabase().table("offers").upsert(offer_row).execute()
-            saved = result.data[0] if result.data else offer_row
+            result = _supabase_request(
+                "POST",
+                "offers",
+                {"on_conflict": "id"},
+                offer_row,
+                "resolution=merge-duplicates,return=representation",
+            )
+            saved = result[0] if result else offer_row
             self._send_json(200, {"offer": _row_to_offer(saved)})
         except PermissionError as exc:
             self._send_json(401, {"error": str(exc)})
@@ -224,7 +265,12 @@ class handler(BaseHTTPRequestHandler):
             if not offer_id:
                 raise ValidationError("Offer ID is required.")
 
-            _get_supabase().table("offers").delete().eq("id", _slugify(offer_id)).execute()
+            _supabase_request(
+                "DELETE",
+                "offers",
+                {"id": f"eq.{_slugify(offer_id)}"},
+                prefer="return=minimal",
+            )
             self._send_json(200, {"message": "Offer deleted."})
         except PermissionError as exc:
             self._send_json(401, {"error": str(exc)})
