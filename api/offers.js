@@ -2,6 +2,85 @@ import crypto from 'node:crypto';
 
 const MAX_BODY_BYTES = 20_000;
 const SUPABASE_TIMEOUT_MS = 10_000;
+const API_VERSION = 'node-offers-v2';
+const FALLBACK_OFFERS = [
+  {
+    active: true,
+    priority: 1,
+    id: 'monsoon-chimney-upgrade',
+    title: 'Monsoon Chimney Upgrade',
+    subtitle: 'Auto-clean chimney with live demo',
+    product: 'Glen 6060 BL AC 60cm',
+    enquiryProduct: 'Glen 6060 BL AC 60cm',
+    discount: '32%',
+    originalPrice: 'Rs. 28,990',
+    salePrice: 'Rs. 19,713',
+    eventName: 'Monsoon Sale',
+    badge: 'BESTSELLER',
+    endDate: '2026-07-15T23:59:59+05:30',
+    image: '/showroom-kitchen-studio.jpg',
+    highlight: true,
+    terms: 'Includes showroom demo and installation guidance. Final price depends on current stock.',
+    ctaText: 'Reserve Offer',
+  },
+  {
+    active: true,
+    priority: 2,
+    id: 'chimney-hob-combo',
+    title: 'Chimney + Hob Combo',
+    subtitle: 'Complete kitchen upgrade set',
+    product: 'Glen 6060 + Glen 1074',
+    enquiryProduct: 'Glen chimney and hob combo',
+    discount: '38%',
+    originalPrice: 'Rs. 47,490',
+    salePrice: 'Rs. 29,444',
+    eventName: 'Combo Deal',
+    badge: 'SAVE BIG',
+    endDate: '2026-06-30T23:59:59+05:30',
+    image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&q=80&w=800',
+    highlight: true,
+    terms: 'Best for new modular kitchens. Ask the store team for fitting requirements.',
+    ctaText: 'Check Combo',
+  },
+  {
+    active: true,
+    priority: 3,
+    id: 'glass-hob-install-pack',
+    title: 'Glass Hob Installation Pack',
+    subtitle: '4-burner glass hob with support',
+    product: 'Glen 1074 SQ BL Hob',
+    enquiryProduct: 'Glen 1074 SQ BL Hob',
+    discount: '24%',
+    originalPrice: 'Rs. 18,500',
+    salePrice: 'Rs. 14,060',
+    eventName: 'Hob Week',
+    badge: 'HOT DEAL',
+    endDate: '2026-06-20T23:59:59+05:30',
+    image: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=82&w=1200',
+    highlight: false,
+    terms: 'Site visit may be needed before final installation confirmation.',
+    ctaText: 'Ask Price',
+  },
+  {
+    active: true,
+    priority: 4,
+    id: 'built-in-oven-week',
+    title: 'Built-in Oven Week',
+    subtitle: 'Convection oven for modern kitchens',
+    product: 'Glen 658 Black Oven',
+    enquiryProduct: 'Glen built-in oven',
+    discount: '20%',
+    originalPrice: 'Rs. 32,000',
+    salePrice: 'Rs. 25,600',
+    eventName: 'Oven Week',
+    badge: 'LIMITED',
+    endDate: '2026-07-31T23:59:59+05:30',
+    image: 'https://images.unsplash.com/photo-1590794056226-79ef3a8147e1?auto=format&fit=crop&q=82&w=1200',
+    highlight: false,
+    terms: 'Offer applies on selected oven models while stock lasts.',
+    ctaText: 'Enquire Now',
+  },
+];
 
 class ValidationError extends Error {}
 
@@ -31,6 +110,7 @@ const sendJson = (response, status, payload) => {
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   response.setHeader('Cache-Control', 'no-store');
+  response.setHeader('X-JJ-Offers-Api', API_VERSION);
   response.end(JSON.stringify(payload));
 };
 
@@ -199,18 +279,35 @@ const supabaseRequest = async (method, table, query = {}, body = undefined, pref
 
 const handleGet = async (request, response) => {
   const requestUrl = new URL(request.url, 'https://local.vercel');
+  if (requestUrl.searchParams.get('health') === '1') {
+    sendJson(response, 200, {
+      ok: true,
+      runtime: API_VERSION,
+      supabaseConfigured: Boolean(getEnv('SUPABASE_URL') && getEnv('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_KEY')),
+      adminPasswordConfigured: Boolean(getEnv('ADMIN_PASSWORD')),
+    });
+    return;
+  }
+
   const adminMode = requestUrl.searchParams.get('admin') === '1';
 
   if (adminMode) requireAdmin(request);
 
-  const rows = await supabaseRequest('GET', 'offers', { select: '*' });
-  let offers = rows.map(rowToOffer);
+  let offers = [];
+  try {
+    const rows = await supabaseRequest('GET', 'offers', { select: '*' });
+    offers = rows.map(rowToOffer);
+  } catch (error) {
+    if (adminMode) throw error;
+    console.warn(`${API_VERSION} public offers fallback:`, error);
+    offers = FALLBACK_OFFERS;
+  }
 
   if (!adminMode) {
     offers = offers.filter((offer) => offer.active);
   }
 
-  sendJson(response, 200, { offers: sortOffers(offers) });
+  sendJson(response, 200, { offers: sortOffers(offers), runtime: API_VERSION });
 };
 
 const handlePost = async (request, response) => {
@@ -280,8 +377,8 @@ export default async function handler(request, response) {
       return;
     }
 
-    console.error(`Offers ${request.method} error:`, error);
+    console.error(`${API_VERSION} ${request.method} error:`, error);
     const action = request.method === 'POST' ? 'save' : request.method === 'DELETE' ? 'delete' : 'load';
-    sendJson(response, 500, { error: `Could not ${action} offers.` });
+    sendJson(response, 500, { error: `Could not ${action} offers.`, runtime: API_VERSION });
   }
 }
