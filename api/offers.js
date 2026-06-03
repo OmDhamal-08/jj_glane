@@ -1,5 +1,9 @@
 import crypto from 'node:crypto';
 
+export const config = {
+  regions: ['bom1'],
+};
+
 const MAX_BODY_BYTES = 20_000;
 const SUPABASE_TIMEOUT_MS = 10_000;
 const API_VERSION = 'node-offers-v2';
