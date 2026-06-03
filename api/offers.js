@@ -8,6 +8,8 @@ export const config = {
 const MAX_BODY_BYTES = 20_000;
 const SUPABASE_TIMEOUT_MS = 10_000;
 const API_VERSION = 'node-offers-v2';
+const SUPABASE_PROJECT_REF = 'uiilgdphkzejnjqmqnzj';
+const DEFAULT_SUPABASE_URL = `https://${SUPABASE_PROJECT_REF}.supabase.co`;
 const SUPABASE_DNS_FALLBACK_IPS = ['104.18.38.10', '172.64.149.246'];
 const FALLBACK_OFFERS = [
   {
@@ -99,11 +101,21 @@ const getEnv = (...names) => {
 };
 
 const getSupabaseConfig = () => {
-  const url = getEnv('SUPABASE_URL').replace(/\/+$/, '');
+  const configuredUrl = getEnv('SUPABASE_URL') || DEFAULT_SUPABASE_URL;
   const key = getEnv('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_KEY');
 
-  if (!url || !key) {
+  if (!key) {
     throw new Error('Supabase configuration is missing');
+  }
+
+  let url = DEFAULT_SUPABASE_URL;
+  try {
+    const parsedUrl = new URL(configuredUrl);
+    url = parsedUrl.hostname.includes(SUPABASE_PROJECT_REF)
+      ? `${parsedUrl.protocol}//${parsedUrl.hostname}`
+      : DEFAULT_SUPABASE_URL;
+  } catch {
+    url = DEFAULT_SUPABASE_URL;
   }
 
   return { url, key };
